@@ -1,3 +1,8 @@
+// Backend proxy for SnapTrade APIs.
+// Responsibilities:
+// - Expose a small REST API for the React admin UI.
+// - Forward requests to SnapTrade with proper auth.
+// - Provide verbose, safe logging to debug integration issues.
 const express = require("express");
 const cors = require("cors");
 const crypto = require("crypto");
@@ -21,6 +26,10 @@ const PORT = Number(process.env.BACKEND_PORT || 0);
 app.use(cors());
 app.use(express.json());
 
+/**
+ * Safely stringify request/response data for logs.
+ * Avoids throwing when data contains circular references.
+ */
 function safeString(v) {
   if (v === undefined) return undefined;
   if (v === null) return null;
@@ -32,6 +41,10 @@ function safeString(v) {
   }
 }
 
+/**
+ * Produce a short SHA256 fingerprint for secrets so we can compare values
+ * across logs without printing the secret itself.
+ */
 function fingerprint(value) {
   if (!value) return null;
   try {
@@ -43,6 +56,9 @@ function fingerprint(value) {
   }
 }
 
+/**
+ * Mask all but the last few characters of a value for log output.
+ */
 function maskLast(value, keep = 4) {
   if (!value) return null;
   const s = String(value);
@@ -50,6 +66,10 @@ function maskLast(value, keep = 4) {
   return `${"*".repeat(Math.max(0, s.length - keep))}${s.slice(-keep)}`;
 }
 
+/**
+ * Log axios-like errors (SnapTrade SDK uses axios internally) with enough
+ * request/response detail to debug auth and request-shape issues.
+ */
 function logAxiosLikeError(prefix, err) {
   // Handles axios-like errors (SnapTrade SDK uses axios under the hood)
   const status = err?.response?.status;
@@ -104,6 +124,9 @@ function logAxiosLikeError(prefix, err) {
   console.error(`[${prefix}] END ERROR ------------------------------------\n`);
 }
 
+/**
+ * Pretty-print a JSON payload and truncate it to keep logs readable.
+ */
 function safePreviewJson(value, maxLen = 4000) {
   try {
     const s = JSON.stringify(value, null, 2);
@@ -114,6 +137,10 @@ function safePreviewJson(value, maxLen = 4000) {
   }
 }
 
+/**
+ * Provide a lightweight summary of the accounts response so we can
+ * see basic shape/keys without dumping the entire payload every time.
+ */
 function summarizeAccountsResponse(data) {
   // SnapTrade shapes vary across versions, but typically an array of account objects.
   if (!data) return { kind: typeof data, count: 0 };
@@ -162,13 +189,14 @@ const SNAPTRADE_CONSUMER_KEY =
   process.env.SNAPTRADE_CONSUMER_KEY;
 const FRONT_END_URL = process.env.FRONT_END_URL;
 
-// Initialize SnapTrade SDK
+// Initialize SnapTrade SDK (high-level client)
 const snaptrade = new Snaptrade({
   clientId: SNAPTRADE_CLIENT_ID,
   consumerKey: SNAPTRADE_CONSUMER_KEY,
 });
 
 // Some SDK endpoints are implemented on the generated API classes.
+// We must pass consumerKey into the generated Configuration for auth to work.
 const generatedConfig = new Configuration({
   // Critical: the generated API client uses Configuration.consumerKey for auth.
   consumerKey: SNAPTRADE_CONSUMER_KEY,
@@ -181,7 +209,7 @@ const accountInformationApi = new AccountInformationApiGenerated(
 
 const referenceDataApi = new ReferenceDataApiGenerated(generatedConfig);
 
-// Test API credentials
+// Test API credentials (quick health check used by the UI and startup logs)
 app.get("/api/status", async (req, res) => {
   try {
     console.log("Testing SnapTrade API credentials...");
@@ -231,7 +259,7 @@ app.get("/api/brokerages", async (req, res) => {
   }
 });
 
-// List all users
+// List all users (and attach any locally stored userSecret for dev convenience)
 app.get("/api/users", async (req, res) => {
   try {
     console.log("Attempting to list SnapTrade users...");
@@ -480,6 +508,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err?.message || "Internal Server Error" });
 });
 
+// Boot server and run a startup health check for SnapTrade credentials.
 const server = app.listen(PORT, () => {
   const actualPort = server.address()?.port;
   console.log(`Backend proxy server running on http://localhost:${actualPort}`);

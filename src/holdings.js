@@ -1,7 +1,11 @@
 import axios from "axios";
 
+// Shared localStorage key used by the admin UI to persist user secrets in dev.
 const USER_SECRETS_KEY = "snaptrade_userSecrets_v1";
 
+/**
+ * Read the local userSecret cache from browser storage.
+ */
 function loadLocalSecrets() {
   try {
     const raw = localStorage.getItem(USER_SECRETS_KEY);
@@ -13,11 +17,17 @@ function loadLocalSecrets() {
   }
 }
 
+/**
+ * Get the stored userSecret for a specific userId (if any).
+ */
 export function getLocalUserSecret(userId) {
   const map = loadLocalSecrets();
   return map?.[userId] || null;
 }
 
+/**
+ * Fetch connected accounts for a user by calling the backend proxy.
+ */
 export async function fetchUserAccounts({ apiBase, userId }) {
   const userSecret = getLocalUserSecret(userId);
   if (!userSecret) {
@@ -30,6 +40,9 @@ export async function fetchUserAccounts({ apiBase, userId }) {
   return res.data;
 }
 
+/**
+ * Fetch holdings for a user (legacy path; backend now prefers accountId).
+ */
 export async function fetchUserHoldings({ apiBase, userId }) {
   const userSecret = getLocalUserSecret(userId);
   if (!userSecret) {
@@ -43,6 +56,9 @@ export async function fetchUserHoldings({ apiBase, userId }) {
 }
 
 // Newer holdings endpoint is account-scoped.
+/**
+ * Fetch holdings for a specific account (current, account-scoped API).
+ */
 export async function fetchUserHoldingsByAccount({ apiBase, userId, accountId }) {
   const userSecret = getLocalUserSecret(userId);
   if (!userSecret) {
@@ -66,6 +82,10 @@ export async function fetchUserHoldingsByAccount({ apiBase, userId, accountId })
 }
 
 // Best-effort normalization helper so the UI can render something even if the API shape differs.
+/**
+ * Best-effort normalization of holdings responses so the UI can render
+ * even when the API shape differs across connectors.
+ */
 export function normalizeHoldingsResponse(data) {
   if (!data) return { accounts: [], positions: [] };
 

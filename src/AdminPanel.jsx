@@ -11,6 +11,12 @@ if (!API_BASE) {
   );
 }
 
+/**
+ * AdminPanel is the main UI for the SnapTrade workflow:
+ * 1) Register users (userId + userSecret).
+ * 2) Generate connection portal URLs.
+ * 3) Fetch connected accounts and holdings.
+ */
 export default function AdminPanel() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -43,6 +49,10 @@ export default function AdminPanel() {
   const [holdingsErrorDetails, setHoldingsErrorDetails] = useState(null);
   const [holdingsData, setHoldingsData] = useState(null);
 
+  /**
+   * Return the first non-empty string from a list of candidates.
+   * If a candidate is an object, try common string fields on it.
+   */
   const firstString = (...candidates) => {
     for (const c of candidates) {
       if (typeof c === "string" && c.trim()) return c.trim();
@@ -61,6 +71,10 @@ export default function AdminPanel() {
     return "";
   };
 
+  /**
+   * Extract a human-readable ticker symbol from a holdings position.
+   * The SnapTrade response shape varies by connector, so we check many paths.
+   */
   const formatTicker = (position) => {
     // Prefer an actual ticker symbol (e.g., SSTK) over any internal ids.
     // SnapTrade position shapes vary by connector; these cover the common cases.
@@ -87,6 +101,10 @@ export default function AdminPanel() {
     );
   };
 
+  /**
+   * Extract the security/company name from a holdings position.
+   * This is used for the "Name" column in the holdings table.
+   */
   const formatSecurityName = (position) => {
     return firstString(
       // Some APIs return these at the top level
@@ -99,10 +117,10 @@ export default function AdminPanel() {
       position?.symbol?.name,
       position?.symbol?.companyName,
 
-  // Specifically observed shape: position.symbol.symbol.description
-  position?.symbol?.symbol?.description,
-  position?.symbol?.symbol?.name,
-  position?.symbol?.symbol?.companyName,
+      // Specifically observed shape: position.symbol.symbol.description
+      position?.symbol?.symbol?.description,
+      position?.symbol?.symbol?.name,
+      position?.symbol?.symbol?.companyName,
 
       position?.universalSymbol?.description,
       position?.universalSymbol?.name,
@@ -129,6 +147,10 @@ export default function AdminPanel() {
   // Shape: { [userId: string]: userSecret: string }
   const USER_SECRETS_KEY = "snaptrade_userSecrets_v1";
 
+  /**
+   * Load locally stored user secrets from browser storage.
+   * This keeps the admin workflow usable after backend restarts.
+   */
   const loadLocalSecrets = () => {
     try {
       const raw = localStorage.getItem(USER_SECRETS_KEY);
@@ -140,6 +162,9 @@ export default function AdminPanel() {
     }
   };
 
+  /**
+   * Save a userSecret to localStorage keyed by userId.
+   */
   const saveLocalSecret = (userId, userSecret) => {
     try {
       const next = { ...loadLocalSecrets(), [userId]: userSecret };
@@ -149,11 +174,17 @@ export default function AdminPanel() {
     }
   };
 
+  /**
+   * Read a userSecret from localStorage (if present).
+   */
   const getLocalSecret = (userId) => {
     const map = loadLocalSecrets();
     return map?.[userId] || null;
   };
 
+  /**
+   * Returns the userId used for API calls. Can be overridden for debugging.
+   */
   const getEffectiveUserId = (userId) => {
     const trimmed = (overrideUserId || "").trim();
     return trimmed || userId;
@@ -163,6 +194,10 @@ export default function AdminPanel() {
   // we override the outbound userId used for SnapTrade calls.
   const getSecretUserId = (rowUserId) => rowUserId;
 
+  /**
+   * Fetch user list from the backend and merge in any locally stored secrets
+   * so the UI can continue to generate portals without re-registering.
+   */
   const fetchUsers = async () => {
     setLoading(true);
     setError(null);
@@ -212,6 +247,9 @@ export default function AdminPanel() {
     setLoading(false);
   };
 
+  /**
+   * Load all brokerages (reference data). Used by earlier UX flows.
+   */
   const fetchBrokerages = async () => {
     setBrokeragesLoading(true);
     setBrokeragesError(null);
@@ -235,6 +273,10 @@ export default function AdminPanel() {
     setBrokeragesLoading(false);
   };
 
+  /**
+   * Fetch the user's connected accounts from SnapTrade and store them
+   * for the "Your Brokerages" list.
+   */
   const fetchUserAccountsForBrokerages = async (userId) => {
     const effectiveUserId = getEffectiveUserId(userId);
     if (!effectiveUserId) return;
@@ -266,6 +308,10 @@ export default function AdminPanel() {
     setAccountsLoading(false);
   };
 
+  /**
+   * Request a connection portal link for the selected user.
+   * Uses the local userSecret and stores the returned redirect URL.
+   */
   const generateConnection = async (userId) => {
     setConnectionLoading(true);
     const effectiveUserId = getEffectiveUserId(userId);
@@ -289,8 +335,8 @@ export default function AdminPanel() {
       });
       setConnectionUrl(res.data.redirectURI);
 
-  // After portal is generated, load the user's connected accounts so we can show only the brokerages the user has.
-      fetchUserAccountsForBrokerages(effectiveUserId);
+    // After portal is generated, load the user's connected accounts so we can show only the brokerages the user has.
+    fetchUserAccountsForBrokerages(effectiveUserId);
 
       // Automatically open in new tab
       // window.open(res.data.redirectURI, "_blank");
@@ -320,6 +366,9 @@ export default function AdminPanel() {
     setConnectionLoading(false);
   };
 
+  /**
+   * Remove a user from SnapTrade and refresh the local list.
+   */
   const deleteUser = async (userId) => {
     if (!window.confirm("Are you sure you want to delete this user?")) return;
     try {
@@ -331,6 +380,10 @@ export default function AdminPanel() {
     }
   };
 
+  /**
+   * Register a new user with SnapTrade and store the userSecret locally
+   * so the admin UI can generate portals without re-registering.
+   */
   const registerUser = async (e) => {
     e.preventDefault();
     if (!newUserId.trim()) {
@@ -377,10 +430,15 @@ export default function AdminPanel() {
     setRegisterLoading(false);
   };
 
+  // Initial load: fetch the user list when the component mounts.
   useEffect(() => {
     fetchUsers();
   }, []);
 
+  /**
+   * Fetch holdings for a specific account and render them in the UI.
+   * Uses the local userSecret but allows a debug override for userId.
+   */
   const viewHoldings = async (userId, accountId = null) => {
     const effectiveUserId = getEffectiveUserId(userId);
     setHoldingsUserId(effectiveUserId);
@@ -431,11 +489,18 @@ export default function AdminPanel() {
     setHoldingsLoading(false);
   };
 
+  /**
+   * Check if the given account is marked as connected in the local UI state.
+   */
   const isBrokerageConnected = (userId, brokerageId) => {
     const arr = connectedBrokeragesByUser?.[userId] || [];
     return arr.includes(brokerageId);
   };
 
+  /**
+   * Mark an account as connected locally and immediately load holdings.
+   * This is a UI-only flow for the demo/UX requirement.
+   */
   const connectBrokerage = async (userId, accountId) => {
     const effectiveUserId = getEffectiveUserId(userId);
     // Dummy connect: store the connected state locally and auto-call holdings.
